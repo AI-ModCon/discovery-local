@@ -1,0 +1,180 @@
+# Discovery Engine + xCard Registry, entirely on a laptop.
+#
+# No AmSC account, no VPN, no AWS. You can author a card, register it through
+# the real registry, and find it in engine search. Every component is the same
+# image that runs on the cluster; only what sits underneath them differs.
+#
+# On AmSC the registry stores cards in S3 and the engine reads them back through
+# the AmSC Data Catalog. Here s3mock stands in for S3 and the engine lists the
+# bucket directly, because a local catalog does not exist. The registry is
+# unchanged either way: S3 is its only storage backend, and
+# XCARD_STORAGE_ENDPOINT_URL is the supported way to point it at an
+# S3-compatible service.
+#
+#   docker compose up -d          bring it up and seed the corpus
+#   open http://localhost:15173   the engine
+#   open http://localhost:18100/api/current/docs   the registry API
+#
+# Authentication is absent on purpose. On the cluster Kong validates a PingAM
+# bearer before anything reaches the registry; the registry itself declares the
+# scheme but does not validate it (HTTPBearer auto_error=False), so with no
+# gateway in front there is nothing to authenticate against. Do not expose
+# these ports beyond localhost.
+
+name: genesis-local
+
+services:
+  # ---------------------------------------------------------------- storage --
+  # Stands in for S3. The registry has no filesystem backend; S3 is its only
+  # storage layer, so a local S3-compatible service is required rather than
+  # optional. The registry's own test suite uses MinIO, but MinIO no longer
+  # publishes pullable community images, so this uses s3mock, which is smaller
+  # and purpose-built for exactly this.
+  s3:
+    image: docker.io/adobe/s3mock:3.12.0
+    environment:
+      initialBuckets: ${XCARD_BUCKET:-xcards}
+      root: /data
+    volumes:
+      - s3-data:/data
+    networks: [genesis-local]
+
+  # ----------------------------------------------------------------- search --
+  # Without this the engine falls back to an in-memory token index whose scoring
+  # is plain set overlap, so a two-word query matches anything containing either
+  # word. That is not what runs on the cluster. This is the same OpenSearch
+  # backend the AmSC deployment uses: BM25 over card text plus a kNN vector
+  # field, combined by a hybrid pipeline.
+  #
+  # Security is off because this is localhost-only and the engine speaks plain
+  # HTTP to it. On AmSC the engine authenticates to a managed domain with SigV4.
+  opensearch:
+    image: docker.io/opensearchproject/opensearch:2.17.1
+    environment:
+      discovery.type: single-node
+      plugins.security.disabled: "true"
+      # Locking the heap into RAM stops the JVM being swapped, which is what you
+      # want on a laptop with memory to spare. Rootless Podman normally cannot
+      # raise the memlock limit, so set OPENSEARCH_MEMORY_LOCK=false and
+      # OPENSEARCH_MEMLOCK_ULIMIT=67108864 there; OpenSearch then runs unlocked.
+      bootstrap.memory_lock: "${OPENSEARCH_MEMORY_LOCK:-true}"
+      OPENSEARCH_JAVA_OPTS: -Xms512m -Xmx512m
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+    ulimits:
+      memlock:
+        soft: ${OPENSEARCH_MEMLOCK_ULIMIT:--1}
+        hard: ${OPENSEARCH_MEMLOCK_ULIMIT:--1}
+      nofile: {soft: 65536, hard: 65536}
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
+    networks: [genesis-local]
+
+  # --------------------------------------------------------------- registry --
+  registry:
+    image: ${REGISTRY_IMAGE:-xcard-registry:local}
+    depends_on:
+      s3: {condition: service_started}
+    environment:
+      XCARD_STORAGE_BUCKET: ${XCARD_BUCKET:-xcards}
+      XCARD_STORAGE_PREFIX: ${XCARD_PREFIX:-registry}
+      XCARD_STORAGE_ENDPOINT_URL: http://s3:9090
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-xcard-local-access}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-xcard-local-secret-key}
+      # Record layout that carries the xCard spine. At 1 or 2 the store keeps
+      # the older data-card-only record shape.
+      XCARD_STORAGE_RECORD_WRITE_VERSION: "3"
+      # Defaults to data_card alone, which would reject models, agents and
+      # resources. Enable all four for local use.
+      XCARD_ENABLED_TYPES: data_card,model_card,agent_card,resource_card
+      # Each enabled type needs a compatible validation profile, and startup
+      # fails otherwise. data_card validates through LinkML; everything else
+      # validates against the Genesis spine schema, so both are required.
+      XCARD_VALIDATION_PROFILES: datacard-linkml,xcard-genesis-spine
+    ports:
+      - "127.0.0.1:${REGISTRY_PORT:-18100}:8000"
+    networks: [genesis-local]
+
+  # Pushes the bundled corpus into the registry once, then exits. Uses the
+  # engine's own registry client, so seeding exercises the same code path the
+  # cluster deployment uses to write cards.
+  seed:
+    image: ${GENESIS_API_IMAGE:-genesis-discovery-api:local}
+    depends_on:
+      registry: {condition: service_started}
+    environment:
+      GENESIS_SETTINGS_SECRET: local-only
+      XCARD_REGISTRY_URL: http://registry:8000
+      SEED_CORPUS: /app/cards/xcard
+      SEED_LIMIT: ${SEED_LIMIT:-0}
+    volumes:
+      - ./seed_registry.py:/seed_registry.py:ro
+    command: ["python", "/seed_registry.py"]
+    restart: "no"
+    networks: [genesis-local]
+
+  # ----------------------------------------------------------------- engine --
+  api:
+    image: ${GENESIS_API_IMAGE:-genesis-discovery-api:local}
+    depends_on:
+      seed: {condition: service_completed_successfully}
+      opensearch: {condition: service_healthy}
+    environment:
+      GENESIS_SETTINGS_SECRET: ${GENESIS_SETTINGS_SECRET:-local-only}
+      # Read cards from the registry's bucket rather than the bundled corpus,
+      # so anything registered here is what search returns.
+      GENESIS_CARD_SOURCE: registry
+      XCARD_STORAGE_BUCKET: ${XCARD_BUCKET:-xcards}
+      XCARD_STORAGE_PREFIX: ${XCARD_PREFIX:-registry}
+      XCARD_STORAGE_ENDPOINT_URL: http://s3:9090
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-xcard-local-access}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-xcard-local-secret-key}
+      # Where the engine writes new cards.
+      XCARD_REGISTRY_URL: http://registry:8000
+      GLOBUS_AUTH_ENABLED: "false"
+      GENESIS_GATEWAY_AUTH: "false"
+      # Use the real search backend rather than the in-memory token index.
+      GENESIS_USE_OPENSEARCH: "1"
+      OPENSEARCH_URL: http://opensearch:9200
+      OPENSEARCH_INDEX: genesis-cards
+      # Real local embeddings (bge-small, 384-dim ONNX, CPU, no PyTorch) rather
+      # than the stub. The stub returns deterministic non-semantic vectors, so
+      # every card looks weakly similar to every query and the kNN half of the
+      # hybrid search drags the whole corpus into every result set.
+      # The model downloads once (~130MB) into the engine-data volume.
+      EMBEDDING_PROVIDER: fastembed
+      GENESIS_EMBED_CACHE: /app/data/fastembed
+      GENESIS_LOG_LEVEL: ${GENESIS_LOG_LEVEL:-INFO}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:-}
+    volumes:
+      - engine-data:/app/data
+    ports:
+      - "127.0.0.1:${API_PORT:-18000}:8000"
+    networks: [genesis-local]
+
+  ui:
+    image: ${GENESIS_UI_IMAGE:-genesis-discovery-ui:local}
+    depends_on:
+      api: {condition: service_healthy}
+    ports:
+      - "127.0.0.1:${UI_PORT:-15173}:80"
+    networks: [genesis-local]
+    # The UI's nginx proxies /api to the host named "api", so that service
+    # name is load-bearing.
+
+volumes:
+  s3-data:
+  opensearch-data:
+  engine-data:
+
+networks:
+  genesis-local:
+    driver: bridge
