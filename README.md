@@ -100,6 +100,22 @@ the model and the seeding, expect several minutes before the UI answers. Then:
 Stop with `docker compose down`. Add `-v` to also discard the registry's
 storage and start from an empty bucket.
 
+## Knobs
+
+Set these in the environment or a `.env` file next to `compose.yaml`.
+
+| | |
+|---|---|
+| `UI_PORT`, `API_PORT`, `REGISTRY_PORT` | change ports on a clash |
+| `SEED_LIMIT` | seed only the first N cards, for a faster start |
+| `ANTHROPIC_API_KEY` | enable the model-backed features |
+| `GENESIS_LOG_LEVEL` | `DEBUG` to see the sync in detail |
+| `GENESIS_BROWSE_MIN_SCORE_RATIO` | search relevance floor, default `0.55`; `0` returns everything ranked |
+| `EMBEDDING_PROVIDER` | `stub` skips the model download, at the cost of semantic search |
+| `GENESIS_AMSC_BASE_URL` | a different MAG deployment than the built-in default |
+| `GENESIS_ARGO_BASE_URL`, `GENESIS_ALCF_BASE_URL` | where your own Argo or ALCF proxy listens, if not on the host |
+| `OPENSEARCH_MEMORY_LOCK`, `OPENSEARCH_MEMLOCK_ULIMIT` | `false` and `67108864` on rootless Podman, which cannot lock memory |
+
 ## If something goes wrong
 
 Start here, because it tells you which service to look at:
@@ -123,6 +139,7 @@ of whichever one is unhappy, for example `docker compose logs opensearch`.
 | `port is already allocated` | Something else holds 15173, 18000 or 18100. Override it under Knobs. |
 | `api` never becomes healthy, `ui` refuses to start | `ui` waits on `api` by design. The cause is in `docker compose logs api`. |
 | Search returns far too much, or nothing semantic works | The embedding model did not download. Check `docker compose logs api` for the fetch. |
+| The canvas assistant says no model is configured | Expected. Add a key under Settings then LLM Providers. |
 
 ## Register a card and find it
 
@@ -201,12 +218,48 @@ scheme but does not validate it itself. With no gateway in front there is
 nothing to authenticate against, so every port here binds to localhost only.
 Do not expose them.
 
-Features that call a language model need a provider. Search, browse, the card
-graph and registration all work without one.
+**The workflow canvas assistant is the one feature that needs a language
+model.** Everything else works without one: search, browse, the card graph, the
+registry API and card registration.
 
-```bash
-ANTHROPIC_API_KEY=sk-... docker compose up -d
-```
+Keys are **per user**, not per deployment. Nothing is configured in this compose
+file. Open the engine, go to Settings then LLM Providers, pick your provider and
+paste your own key. Each person brings whatever they already have.
+
+The option that needs no personal Anthropic account is the **AmSC Model Access
+Gateway (MAG)**. It is reachable from an ordinary network with no VPN, it speaks
+the Anthropic API directly, and it fronts Claude along with many other models.
+You do need an AmSC account.
+
+To get a token, from
+[the MAG documentation](https://docs.amsc.energy.gov/model-access-gateway#3-create-a-mag-pat-personal-access-token):
+
+1. Sign in to the MyAmSC dashboard at https://my.amsc.energy.gov/dashboard
+2. Pick your AmSC project in the left navigation
+3. Click **Personal Access Tokens**, then **Generate PAT**
+4. Give it a description and submit, authorising Ping Identity if asked
+5. Copy the token before closing the dialog. It is shown only once.
+
+The token starts with `sk-`. If yours does not, you have copied the wrong
+string. Then open the engine, go to Settings, LLM Providers, choose **AmSC** and
+paste it.
+
+MAG has more than one deployment, and the documentation describes a staging host
+that sits behind browser sign-in rather than accepting a token directly. The
+engine defaults to the one that does accept tokens. If yours was issued against
+a different host, set `GENESIS_AMSC_BASE_URL` rather than editing any code.
+
+Two providers in the list, Argo and ALCF, expect a translating proxy running on
+your own machine. This compose file points them at `host.docker.internal` so a
+proxy on your host is reachable from the container; override
+`GENESIS_ARGO_BASE_URL` or `GENESIS_ALCF_BASE_URL` if yours listens elsewhere.
+
+Your key is stored encrypted in `/app/data/user_settings.db`, which is on the
+`engine-data` volume, so it survives `docker compose down`. It does not survive
+`docker compose down -v`.
+
+If no key is configured the assistant now tells you so, rather than reporting a
+generic failure.
 
 ## What the registry will not accept
 
@@ -217,20 +270,6 @@ and cannot be registered. Seeding reports what it skipped and why.
 A handful of corpus cards also fail the registry's validation because they are
 missing required fields. That is the same check the engine's own validator
 applies, so the two agree about what is well formed.
-
-## Knobs
-
-Set these in the environment or a `.env` file next to `compose.yaml`.
-
-| | |
-|---|---|
-| `UI_PORT`, `API_PORT`, `REGISTRY_PORT` | change ports on a clash |
-| `SEED_LIMIT` | seed only the first N cards, for a faster start |
-| `ANTHROPIC_API_KEY` | enable the model-backed features |
-| `GENESIS_LOG_LEVEL` | `DEBUG` to see the sync in detail |
-| `GENESIS_BROWSE_MIN_SCORE_RATIO` | search relevance floor, default `0.55`; `0` returns everything ranked |
-| `EMBEDDING_PROVIDER` | `stub` skips the model download, at the cost of semantic search |
-| `OPENSEARCH_MEMORY_LOCK`, `OPENSEARCH_MEMLOCK_ULIMIT` | `false` and `67108864` on rootless Podman, which cannot lock memory |
 
 ## Rebuilding the images (maintainers)
 

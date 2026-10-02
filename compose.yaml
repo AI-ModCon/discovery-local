@@ -151,6 +151,19 @@ services:
       # The model downloads once (~130MB) into the engine-data volume.
       EMBEDDING_PROVIDER: fastembed
       GENESIS_EMBED_CACHE: /app/data/fastembed
+      # Per-user settings, including each user's encrypted LLM API key, live
+      # here rather than in the container's home directory, which is not on a
+      # volume. Without this a user pastes a key, runs 'compose down', and the
+      # key is gone.
+      GENESIS_SETTINGS_DB: /app/data/user_settings.db
+      # Argo and ALCF are reached through a proxy the user runs themselves. The
+      # registry defaults point at localhost, which inside a container means the
+      # container, not the user's machine. Redirect both to the host.
+      # Which MAG deployment the user's token belongs to. Empty uses the
+      # built-in default; set this if your token was issued elsewhere.
+      GENESIS_AMSC_BASE_URL: ${GENESIS_AMSC_BASE_URL:-}
+      GENESIS_ARGO_BASE_URL: ${GENESIS_ARGO_BASE_URL:-http://host.docker.internal:44497}
+      GENESIS_ALCF_BASE_URL: ${GENESIS_ALCF_BASE_URL:-http://host.docker.internal:4000}
       GENESIS_LOG_LEVEL: ${GENESIS_LOG_LEVEL:-INFO}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:-}
@@ -164,6 +177,8 @@ services:
       timeout: 5s
       retries: 30
       start_period: 30s
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - engine-data:/app/data
     ports:
