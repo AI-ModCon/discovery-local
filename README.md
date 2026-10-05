@@ -240,14 +240,13 @@ To get a token, from
 4. Give it a description and submit, authorising Ping Identity if asked
 5. Copy the token before closing the dialog. It is shown only once.
 
-The token starts with `sk-`. If yours does not, you have copied the wrong
-string. Then open the engine, go to Settings, LLM Providers, choose **AmSC** and
-paste it.
+Then open the engine, go to Settings, LLM Providers, choose **AmSC** and paste
+it. The token is a long string beginning `eyJ`. Nothing else needs configuring:
+the engine already points at the endpoint the MAG documentation gives, and sends
+the bearer token and model mappings that documentation specifies.
 
-MAG has more than one deployment, and the documentation describes a staging host
-that sits behind browser sign-in rather than accepting a token directly. The
-engine defaults to the one that does accept tokens. If yours was issued against
-a different host, set `GENESIS_AMSC_BASE_URL` rather than editing any code.
+If your token was issued against a different MAG deployment, set
+`GENESIS_AMSC_BASE_URL` rather than editing any code.
 
 Two providers in the list, Argo and ALCF, expect a translating proxy running on
 your own machine. This compose file points them at `host.docker.internal` so a
