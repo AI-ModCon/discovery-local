@@ -15,19 +15,43 @@ you edited, not the template.
 ## The loop
 
 ```bash
-# 1. register it
+# 1. take a copy. Leave the template alone so you can start again.
+cp templates/agent_card.md my-agent.md
+
+# 2. edit my-agent.md: replace every value marked CHANGE ME, and replace the
+#    body below the frontmatter with your own documentation.
+
+# 3. check you actually filled it in
+python3 templates/check_card.py my-agent.md
+
+# 4. register your copy
 curl -X POST http://localhost:18100/api/current/registry/agent_card \
   -H "Content-Type: text/vnd.genesis.agent-card+markdown" \
-  --data-binary @agent_card.md
+  --data-binary @my-agent.md
 
-# 2. tell the engine to pick it up
+# 5. tell the engine to pick it up
 curl -X POST http://localhost:18000/api/v1/admin/resync
 
-# 3. find it at http://localhost:15173
+# 6. find it at http://localhost:15173
 ```
 
-Without step 2 the card sits in the registry but is not searchable, because the
+Keep your copy. The card you registered lives in the registry's storage, and
+`docker compose down -v` discards it; your file is the only thing you can
+re-register from.
+
+Step 3 compares your card against the template it came from and refuses any
+field you left untouched. The templates are valid cards, so the registry will
+accept one you never edited: it is well formed, it just describes nothing. A
+corpus full of "My Example Agent" is worse than an empty one, because search
+returns them. Pass `--allow FIELD` for anything you mean to keep.
+
+Without step 5 the card sits in the registry but is not searchable, because the
 index is built when the engine starts.
+
+Register the same file again after editing it and you get a **second card**, not
+an updated one: the registry assigns a new id per submission. Change the `id:`
+in your frontmatter when you mean a different card, and expect duplicates when
+you are iterating.
 
 You can also register through the registry's own API docs page at
 http://localhost:18100/api/current/docs, which shows validation errors inline.

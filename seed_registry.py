@@ -7,9 +7,12 @@ than raw HTTP: seeding then exercises the same create path the cluster
 deployment uses, and a contract change breaks the local stack loudly instead of
 silently diverging.
 
-Idempotent by omission rather than by design: the registry assigns ids, so
-re-running adds duplicates. Compose only runs it once per `up`; use
-`docker compose down -v` to start from an empty bucket.
+Skips when the bucket already holds cards. The registry assigns ids, so
+re-running would add a second copy of every card rather than updating them.
+That did not show while the S3 stand-in discarded its files on shutdown, since
+every start began empty. Now that it retains them, seeding has to check.
+
+Set SEED_FORCE=1 to seed anyway, or `docker compose down -v` to start empty.
 """
 
 from __future__ import annotations
@@ -32,6 +35,34 @@ CORPUS = Path(os.environ.get("SEED_CORPUS", "/app/cards/xcard"))
 LIMIT = int(os.environ.get("SEED_LIMIT", "0"))
 REGISTRY_URL = os.environ.get("XCARD_REGISTRY_URL", "http://registry:8000")
 READY_ATTEMPTS = 60
+FORCE = os.environ.get("SEED_FORCE", "") not in ("", "0", "false", "False")
+
+
+def bucket_already_seeded() -> bool:
+    """True when the registry's bucket already holds objects.
+
+    Checked directly against storage rather than through the registry, which
+    serves cards by id only and so cannot answer "is there anything here".
+    Any failure returns False: seeding a populated bucket is recoverable, and
+    refusing to seed an empty one leaves the engine with nothing to index.
+    """
+    try:
+        import boto3
+
+        client = boto3.client(
+            "s3",
+            endpoint_url=os.environ.get("XCARD_STORAGE_ENDPOINT_URL"),
+            region_name=os.environ.get("AWS_REGION", "us-east-1"),
+        )
+        listing = client.list_objects_v2(
+            Bucket=os.environ["XCARD_STORAGE_BUCKET"],
+            Prefix=os.environ.get("XCARD_STORAGE_PREFIX", ""),
+            MaxKeys=1,
+        )
+        return listing.get("KeyCount", 0) > 0
+    except Exception as exc:  # noqa: BLE001 - never block seeding on this
+        print(f"could not check whether the bucket is seeded: {exc}", flush=True)
+        return False
 
 
 def card_type_of(markdown: str) -> str | None:
@@ -61,6 +92,15 @@ async def wait_for_registry(client: XCardRegistryApiClient) -> bool:
 
 
 async def main() -> int:
+    if not FORCE and bucket_already_seeded():
+        print(
+            "registry already holds cards; skipping the seed. "
+            "Set SEED_FORCE=1 to seed anyway, or 'docker compose down -v' to "
+            "start from an empty bucket.",
+            flush=True,
+        )
+        return 0
+
     paths = sorted(CORPUS.rglob("*.md"))
     if LIMIT:
         paths = paths[:LIMIT]

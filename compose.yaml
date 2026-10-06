@@ -35,6 +35,10 @@ services:
     environment:
       initialBuckets: ${XCARD_BUCKET:-xcards}
       root: /data
+      # s3mock deletes its files on shutdown unless told otherwise, so every
+      # card anyone registered vanished on `docker compose down`. The corpus
+      # came back because it is re-seeded on start; a user's own cards did not.
+      retainFilesOnExit: "true"
     volumes:
       - s3-data:/data
     networks: [genesis-local]
@@ -87,9 +91,9 @@ services:
       AWS_REGION: us-east-1
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-xcard-local-access}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-xcard-local-secret-key}
-      # Record layout that carries the xCard spine. At 1 or 2 the store keeps
-      # the older data-card-only record shape.
-      XCARD_STORAGE_RECORD_WRITE_VERSION: "3"
+      # Record v4 carries the xCard spine and durable catalog publication state.
+      # Catalog coordination and delivery require this version.
+      XCARD_STORAGE_RECORD_WRITE_VERSION: "4"
       # Defaults to data_card alone, which would reject models, agents and
       # resources. Enable all four for local use.
       XCARD_ENABLED_TYPES: data_card,model_card,agent_card,resource_card
@@ -97,8 +101,43 @@ services:
       # fails otherwise. data_card validates through LinkML; everything else
       # validates against the Genesis spine schema, so both are required.
       XCARD_VALIDATION_PROFILES: datacard-linkml,xcard-genesis-spine
+      # Enable the catalog feature in the registry.
+      # One switch. The three flags have to agree: the registry rejects
+      # replay while the catalog is disabled, which is how a config that
+      # reads as "off" still stopped the registry from starting.
+      XCARD_CATALOG_ENABLED: "${XCARD_CATALOG_ENABLED:-false}"
+      XCARD_CATALOG_COORDINATION_ENABLED: "${XCARD_CATALOG_ENABLED:-false}"
+      XCARD_CATALOG_REPLAY_ENABLED: "${XCARD_CATALOG_ENABLED:-false}"
+      # Catalog configuration
+      XCARD_CATALOG_ELIGIBILITY_POLICY: "all-validated"
+      XCARD_CATALOG_CONTRACT_VERSION: "amsc-artifact-v1"
+      XCARD_CATALOG_BASE_URL: "https://api.ds.dev.american-science-cloud.org/api/current"
+      XCARD_CATALOG_NAME: "hpdf-xcard-registry-storage.hpdf-xcard-registry-data-catalog"
+      XCARD_CATALOG_PARENT_FQN: "hpdf-xcard-registry-storage.hpdf-xcard-registry-data-catalog"
+      XCARD_REGISTRY_INSTANCE: "hpdf-xcard-registry-ds-dev"
+      # Catalog card links use the local TLS proxy. Override for a shared HTTPS
+      # endpoint; the URL must end in /api/current.
+      XCARD_PUBLIC_REGISTRY_BASE_URL: "${XCARD_PUBLIC_REGISTRY_BASE_URL:-https://localhost:${REGISTRY_HTTPS_PORT:-18443}/api/current}"
+      # Required only when the catalog is on. Demanding it unconditionally
+      # stopped the stack for anyone who has no token and does not need one.
+      XCARD_CATALOG_TOKEN: ${XCARD_CATALOG_TOKEN:-}
+
     ports:
       - "127.0.0.1:${REGISTRY_PORT:-18100}:8000"
+    networks: [genesis-local]
+
+  # Catalog links require HTTPS even when the registry runs on a laptop.
+  # Caddy supplies a local CA and proxies to the registry's HTTP listener.
+  registry-https:
+    image: docker.io/caddy:2-alpine
+    depends_on:
+      registry: {condition: service_started}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - registry-tls-data:/data
+      - registry-tls-config:/config
+    ports:
+      - "127.0.0.1:${REGISTRY_HTTPS_PORT:-18443}:443"
     networks: [genesis-local]
 
   # Pushes the bundled corpus into the registry once, then exits. Uses the
@@ -113,6 +152,15 @@ services:
       XCARD_REGISTRY_URL: http://registry:8000
       SEED_CORPUS: /app/cards/xcard
       SEED_LIMIT: ${SEED_LIMIT:-0}
+      SEED_FORCE: ${SEED_FORCE:-}
+      # Read access to the bucket, so seeding can tell whether it has already
+      # run. The registry serves cards by id and cannot answer that.
+      XCARD_STORAGE_BUCKET: ${XCARD_BUCKET:-xcards}
+      XCARD_STORAGE_PREFIX: ${XCARD_PREFIX:-registry}
+      XCARD_STORAGE_ENDPOINT_URL: http://s3:9090
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-xcard-local-access}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-xcard-local-secret-key}
     volumes:
       - ./seed_registry.py:/seed_registry.py:ro
     command: ["python", "/seed_registry.py"]
@@ -141,6 +189,11 @@ services:
       GLOBUS_AUTH_ENABLED: "false"
       GENESIS_GATEWAY_AUTH: "false"
       # Use the real search backend rather than the in-memory token index.
+      # The AmSC Data Catalog is not reachable from a laptop and has nothing
+      # to authenticate against here. Left on, the assistant spends turns
+      # calling it and waiting for each failure before answering from the
+      # local index anyway.
+      GENESIS_ENABLE_AMSC_CATALOG: "0"
       GENESIS_USE_OPENSEARCH: "1"
       OPENSEARCH_URL: http://opensearch:9200
       OPENSEARCH_INDEX: genesis-cards
@@ -199,6 +252,8 @@ volumes:
   s3-data:
   opensearch-data:
   engine-data:
+  registry-tls-data:
+  registry-tls-config:
 
 networks:
   genesis-local:
