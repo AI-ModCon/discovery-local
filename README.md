@@ -112,7 +112,7 @@ Set these in the environment or a `.env` file next to `compose.yaml`.
 | `GENESIS_LOG_LEVEL` | `DEBUG` to see the sync in detail |
 | `GENESIS_BROWSE_MIN_SCORE_RATIO` | search relevance floor, default `0.55`; `0` returns everything ranked |
 | `EMBEDDING_PROVIDER` | `stub` skips the model download, at the cost of semantic search |
-| `GENESIS_AMSC_BASE_URL` | a different MAG deployment than the built-in default |
+| `GENESIS_AMSC_BASE_URL` | a different MAG deployment for everyone on this engine; a user can override it in Settings |
 | `GENESIS_ARGO_BASE_URL`, `GENESIS_ALCF_BASE_URL` | where your own Argo or ALCF proxy listens, if not on the host |
 | `OPENSEARCH_MEMORY_LOCK`, `OPENSEARCH_MEMLOCK_ULIMIT` | `false` and `67108864` on rootless Podman, which cannot lock memory |
 
@@ -227,12 +227,16 @@ file. Open the engine, go to Settings then LLM Providers, pick your provider and
 paste your own key. Each person brings whatever they already have.
 
 The option that needs no personal Anthropic account is the **AmSC Model Access
-Gateway (MAG)**. It is reachable from an ordinary network with no VPN, it speaks
-the Anthropic API directly, and it fronts Claude along with many other models.
-You do need an AmSC account.
+Gateway (MAG)**. It speaks the Anthropic API directly and fronts Claude along
+with many other models. You do need an AmSC account.
+
+It may also need you to be on the AmSC network. The gateway sits behind
+Cloudflare Access, and from an ordinary network we saw it refuse every request
+with a 403 before the client was on the VPN. If the assistant reports a gateway
+timeout and everything else in the engine works, check that first.
 
 To get a token, from
-[the MAG documentation](https://docs.amsc.energy.gov/model-access-gateway#3-create-a-mag-pat-personal-access-token):
+[the MAG documentation](https://docs.amsc.energy.gov/mag-get-started/#3-create-a-mag-pat-personal-access-token):
 
 1. Sign in to the MyAmSC dashboard at https://my.amsc.energy.gov/dashboard
 2. Pick your AmSC project in the left navigation
@@ -245,8 +249,12 @@ it. The token is a long string beginning `eyJ`. Nothing else needs configuring:
 the engine already points at the endpoint the MAG documentation gives, and sends
 the bearer token and model mappings that documentation specifies.
 
-If your token was issued against a different MAG deployment, set
-`GENESIS_AMSC_BASE_URL` rather than editing any code.
+MAG has more than one deployment and they are not interchangeable: a token
+minted against one does not work against another, and the failure is not
+obvious -- the request hangs and the UI reports a gateway timeout. If your
+token belongs elsewhere, set the endpoint in **Settings, LLM Providers**,
+under the MAG key. `GENESIS_AMSC_BASE_URL` still sets it for a whole
+deployment.
 
 Two providers in the list, Argo and ALCF, expect a translating proxy running on
 your own machine. This compose file points them at `host.docker.internal` so a
