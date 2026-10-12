@@ -4,14 +4,19 @@ The engine and the real AmSC xCard Registry running together locally. No AmSC
 account, no VPN, no AWS. You can register a card through the registry and find
 it in engine search.
 
+One exception, and only one: the workflow assistant calls a language model
+through the AmSC Model Access Gateway, which needs an AmSC account and, from
+what we have seen, the AmSC network. Everything else here works offline.
+
 Every service here is the same image that runs on the cluster. Only what sits
 underneath them changes.
 
 ## Before you start
 
-You need no AmSC account, no GitLab account, no AWS credentials and no VPN. You
-do need the following, and it is worth checking all six rather than discovering
-them one failure at a time.
+You need no AmSC account, no GitLab account, no AWS credentials and no VPN --
+except for the workflow assistant, which is the one feature that calls out to a
+language model. You do need the following, and it is worth checking all six
+rather than discovering them one failure at a time.
 
 **A supported platform.** The published images are multi-architecture, so
 `docker compose pull` resolves `linux/amd64` or `linux/arm64` to match your
@@ -108,9 +113,8 @@ Set these in the environment or a `.env` file next to `compose.yaml`.
 |---|---|
 | `UI_PORT`, `API_PORT`, `REGISTRY_PORT` | change ports on a clash |
 | `SEED_LIMIT` | seed only the first N cards, for a faster start |
-| `ANTHROPIC_API_KEY` | enable the model-backed features |
 | `GENESIS_LOG_LEVEL` | `DEBUG` to see the sync in detail |
-| `GENESIS_BROWSE_MIN_SCORE_RATIO` | search relevance floor, default `0.55`; `0` returns everything ranked |
+| `GENESIS_SEARCH_MIN_SCORE` | search relevance floor, default `0.55`; `0` returns everything ranked |
 | `EMBEDDING_PROVIDER` | `stub` skips the model download, at the cost of semantic search |
 | `GENESIS_AMSC_BASE_URL` | a different MAG deployment for everyone on this engine; a user can override it in Settings |
 | `GENESIS_ARGO_BASE_URL`, `GENESIS_ALCF_BASE_URL` | where your own Argo or ALCF proxy listens, if not on the host |
@@ -219,7 +223,7 @@ nothing to authenticate against, so every port here binds to localhost only.
 Do not expose them.
 
 **The workflow canvas assistant is the one feature that needs a language
-model.** Everything else works without one: search, browse, the card graph, the
+model.** Everything else works without one: search, the card graph, the
 registry API and card registration.
 
 Keys are **per user**, not per deployment. Nothing is configured in this compose
