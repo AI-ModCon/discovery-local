@@ -71,6 +71,37 @@ def is_worth_flagging(path: str, value: Any) -> bool:
     return isinstance(value, str) and " " in value.strip() and len(value) > 20
 
 
+MEDIA_TYPE = re.compile(r"^[a-z]+/[a-zA-Z0-9][a-zA-Z0-9!#$&^_.+-]*$")
+
+
+def io_contract_problems(card: dict[str, Any]) -> list[str]:
+    """Report io_contract entries that are not media types.
+
+    These two lists are the only machine-readable statement of what a resource
+    consumes and produces, and the engine chains cards on them. A value that is
+    prose, a payload name, or several types joined by commas matches nothing,
+    so the contract silently means "composes with nothing" while looking filled
+    in. See docs/reference/io-contract-vocabulary.md.
+    """
+    io = card.get("io_contract")
+    if not isinstance(io, dict):
+        return []
+    problems = []
+    for side in ("input_modes", "output_modes"):
+        for value in io.get(side) or []:
+            if not isinstance(value, str) or MEDIA_TYPE.match(value):
+                continue
+            shown = value if len(value) <= 56 else value[:53] + "..."
+            if "/" not in value:
+                why = "not a media type - name the format, e.g. application/json"
+            elif "," in value:
+                why = "several types in one string - split them into separate entries"
+            else:
+                why = "not a valid media type - use lowercase type/subtype"
+            problems.append(f"{side}: {shown!r}\n      {why}")
+    return problems
+
+
 def split_front_matter(text: str) -> tuple[dict[str, Any], str]:
     """Return the parsed YAML front matter and the Markdown body."""
     match = re.match(r"^---\s*\n(.*?)\n---\s*\n?(.*)$", text, re.S)
@@ -141,12 +172,13 @@ def main() -> int:
     ]
 
     stale_body = [s for s in BODY_SENTINELS if s in body]
+    io_problems = io_contract_problems(card)
 
-    if not unchanged and not stale_body:
+    if not unchanged and not stale_body and not io_problems:
         print(f"{args.card}: ready to register.")
         return 0
 
-    print(f"{args.card}: still carries template content.\n")
+    print(f"{args.card}: not ready to register.\n")
     if unchanged:
         print(f"Fields identical to {template_name}:")
         width = max(len(p) for p, _ in unchanged)
@@ -160,6 +192,11 @@ def main() -> int:
         print("The body below the front matter is still the template's:")
         for sentinel in stale_body:
             print(f"  ...{sentinel}...")
+        print()
+    if io_problems:
+        print("The I/O contract holds values that are not media types:")
+        for problem in io_problems:
+            print(f"  {problem}")
         print()
     print(
         "Edit those, or pass --allow FIELD for any you mean to keep.\n"
