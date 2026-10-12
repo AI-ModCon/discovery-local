@@ -21,8 +21,10 @@
 
 # --- xCard spine ------------------------------------------------------------
 # card_type is "data" here while the registry endpoint is "data_card". That is
-# deliberate. The v2 schema spells it "dataset"; the registry accepts "data"
-# today, and the two are being reconciled.
+# deliberate, and the two spellings are a known disagreement: Genesis data card
+# v2.0.0 fixes card_type to "dataset", the spine enumerates "data". The local
+# registry now accepts either, so a card written against the published schema
+# registers unchanged. "data" stays canonical until the schemas are reconciled.
 xCard:
   card_type: data
   version: '0.1'
