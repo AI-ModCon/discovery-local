@@ -105,6 +105,23 @@ the model and the seeding, expect several minutes before the UI answers. Then:
 Stop with `docker compose down`. Add `-v` to also discard the registry's
 storage and start from an empty bucket.
 
+## The hackathon's own documents
+
+The agenda and the welcome packet ship as cards, so the assistant answers the
+questions people ask on the day -- where lunch is, which building they are in,
+how to get an ALCF account, what the wifi is, where to go if the alarm sounds.
+They are not loaded automatically, because `seed_registry.py` can only POST
+card types the registry has a subtype for and these have none:
+
+```bash
+docker compose exec api python /load_hackathon_materials.py
+curl -X POST http://localhost:18000/api/v1/admin/resync
+```
+
+Then ask the assistant "where is lunch?". They also show up in Explore under
+the **Hackathon Materials** filter. Re-running the loader replaces them rather
+than adding a second copy. See `hackathon/README.md`.
+
 ## Knobs
 
 Set these in the environment or a `.env` file next to `compose.yaml`.

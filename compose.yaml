@@ -232,6 +232,12 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - engine-data:/app/data
+      # The hackathon's own documents and the loader that puts them in the
+      # registry's storage. Mounted rather than baked into the image: they are
+      # event material with a date on them, and the loader is run by hand once.
+      # See hackathon/README.md.
+      - ./hackathon:/hackathon:ro
+      - ./load_hackathon_materials.py:/load_hackathon_materials.py:ro
     ports:
       - "127.0.0.1:${API_PORT:-18000}:8000"
     networks: [genesis-local]
