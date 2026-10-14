@@ -12,14 +12,20 @@ subtype that exists for three days is not worth teaching it. `load_hackathon_
 materials.py` writes them to the registry's storage directly, which is why
 `seed_registry.py` leaves them alone.
 
-To load them into a running local stack:
+`docker compose up` loads them. The seed service runs `seed_registry.py` for
+the corpus and then `load_hackathon_materials.py` for these, and the engine
+indexes them on startup like everything else, so there is nothing to run and
+no resync. "Where is lunch?" works the first time the stack comes up.
+
+To reload them into a stack that is already running -- after editing one of
+the documents, say:
 
 ```bash
 docker compose exec api python /load_hackathon_materials.py
 curl -X POST http://localhost:18000/api/v1/admin/resync
 ```
 
-Then "where is lunch?" in the assistant answers from the welcome packet.
+The resync is only needed here because the engine is already past startup.
 
 ## Why the whole document is in `description`
 

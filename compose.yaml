@@ -163,7 +163,26 @@ services:
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-xcard-local-secret-key}
     volumes:
       - ./seed_registry.py:/seed_registry.py:ro
-    command: ["python", "/seed_registry.py"]
+      - ./load_hackathon_materials.py:/load_hackathon_materials.py:ro
+      - ./hackathon:/hackathon:ro
+    # Two steps, because the hackathon's own documents cannot go through the
+    # registry: `hackathon_materials` has no subtype there, so seed_registry.py
+    # skips them the way it skips framework and workflow cards. The loader
+    # writes them to the bucket directly, and the engine indexes them on
+    # startup like everything else -- no resync, nothing to run by hand.
+    #
+    # The seed's exit code is what survives: api waits on this service
+    # completing successfully, so a failure to seed must still stop the stack.
+    # The documents failing to load must not -- an engine without an agenda is
+    # worth having, and the loader can be re-run from the api container.
+    command:
+      - sh
+      - -c
+      - |
+        python /seed_registry.py; rc=$$?
+        python /load_hackathon_materials.py \
+          || echo "hackathon materials not loaded; the engine is fine without them"
+        exit $$rc
     restart: "no"
     networks: [genesis-local]
 

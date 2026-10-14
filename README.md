@@ -110,17 +110,14 @@ storage and start from an empty bucket.
 The agenda and the welcome packet ship as cards, so the assistant answers the
 questions people ask on the day -- where lunch is, which building they are in,
 how to get an ALCF account, what the wifi is, where to go if the alarm sounds.
-They are not loaded automatically, because `seed_registry.py` can only POST
-card types the registry has a subtype for and these have none:
+`docker compose up` loads them for you. They cannot go through the registry --
+`seed_registry.py` only POSTs card types the registry has a subtype for, and
+these have none -- so the seed service writes them to its storage directly and
+the engine indexes them on startup. Ask the assistant "where is lunch?" as soon
+as the stack is up.
 
-```bash
-docker compose exec api python /load_hackathon_materials.py
-curl -X POST http://localhost:18000/api/v1/admin/resync
-```
-
-Then ask the assistant "where is lunch?". They also show up in Explore under
-the **Hackathon Materials** filter. Re-running the loader replaces them rather
-than adding a second copy. See `hackathon/README.md`.
+They also show up in Explore under the **Hackathon Materials** filter. To
+reload them after editing one, see `hackathon/README.md`.
 
 ## Knobs
 
