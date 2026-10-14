@@ -36,6 +36,10 @@ TEMPLATE_FOR_TYPE = {
     "model": "model_card.md",
     "data": "data_card.md",
     "infrastructure": "resource_card.md",
+    # Not registrable -- the registry has no workflow subtype -- but it is
+    # still a card the engine indexes, and still a template you can forget to
+    # edit, which is what this checks.
+    "workflow": "workflow_card.md",
 }
 
 # Prose the templates ship with. Leaving it in means the body was never written.
@@ -88,7 +92,15 @@ def io_contract_problems(card: dict[str, Any]) -> list[str]:
         return []
     problems = []
     for side in ("input_modes", "output_modes"):
-        for value in io.get(side) or []:
+        values = io.get(side) or []
+        seen = [v for v in values if isinstance(v, str)]
+        duplicates = {v for v in seen if seen.count(v) > 1}
+        for value in sorted(duplicates):
+            problems.append(
+                f"{side}: {value!r} listed more than once\n"
+                "      each media type should appear once"
+            )
+        for value in values:
             if not isinstance(value, str) or MEDIA_TYPE.match(value):
                 continue
             shown = value if len(value) <= 56 else value[:53] + "..."
@@ -154,9 +166,17 @@ def main() -> int:
             f"{', '.join(sorted(TEMPLATE_FOR_TYPE))}."
         )
 
-    template_path = HERE / template_name
-    if not template_path.is_file():
-        sys.exit(f"Cannot find the template to compare against: {template_path}")
+    # Beside this script is the usual case. `../assets` covers the skill
+    # layout, where the templates are assets and this is a script -- without
+    # it the check fails for everyone following the skill, which is exactly
+    # where it matters most.
+    candidates = [HERE / template_name, HERE.parent / "assets" / template_name]
+    template_path = next((p for p in candidates if p.is_file()), None)
+    if template_path is None:
+        sys.exit(
+            "Cannot find the template to compare against. Looked in:\n  "
+            + "\n  ".join(str(p) for p in candidates)
+        )
     template, _ = split_front_matter(template_path.read_text(encoding="utf-8"))
 
     card_leaves, template_leaves = leaves(card), leaves(template)

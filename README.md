@@ -119,6 +119,18 @@ as the stack is up.
 They also show up in Explore under the **Hackathon Materials** filter. To
 reload them after editing one, see `hackathon/README.md`.
 
+## Writing a card
+
+`skills/xcard-author/` is a Claude Code skill that writes an xCard and
+registers it -- model, data, agent, resource or workflow. It starts from the
+templates in `templates/`, which are valid cards tested against the registry,
+fills them by asking and by reading the thing being described, checks the card
+has actually been edited, and registers it.
+
+Point Claude Code at this directory and ask it to describe your model, dataset
+or agent as a card. Or use the templates directly: `templates/README.md` has
+the loop.
+
 ## Knobs
 
 Set these in the environment or a `.env` file next to `compose.yaml`.
