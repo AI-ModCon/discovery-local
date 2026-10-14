@@ -237,6 +237,15 @@ services:
       GENESIS_ARGO_BASE_URL: ${GENESIS_ARGO_BASE_URL:-http://host.docker.internal:44497}
       GENESIS_ALCF_BASE_URL: ${GENESIS_ALCF_BASE_URL:-http://host.docker.internal:4000}
       GENESIS_LOG_LEVEL: ${GENESIS_LOG_LEVEL:-INFO}
+      # HACKATHON ONLY (temporary): skip TLS verification for the assistant's
+      # outbound model calls. On the ORNL network a Netskope proxy re-signs
+      # HTTPS with a private CA the container does not trust, so the gateway
+      # call fails with CERTIFICATE_VERIFY_FAILED / SELF_SIGNED_CERT_IN_CHAIN.
+      # These let everyone run without extracting and mounting the Netskope CA.
+      # Covers the Node assistant path and the Python/urllib gateway path.
+      # REMOVE AFTER THE EVENT -- this disables certificate checking.
+      NODE_TLS_REJECT_UNAUTHORIZED: "0"
+      PYTHONHTTPSVERIFY: "0"
     # Declared here rather than relied on from the image. Docker Compose reads
     # an image's HEALTHCHECK, but Podman does not surface it, so `ui` waiting on
     # `depends_on: api: service_healthy` failed with "no healthcheck configured".
