@@ -1,6 +1,6 @@
 # Card templates
 
-Four templates, one per card type. Each one is a **valid card already**: fill in
+Five templates, one per card type. Each one is a **valid card already**: fill in
 the values marked `CHANGE ME` and leave the structure alone. They are tested
 against the registry on every change, so if yours is rejected it is something
 you edited, not the template.
@@ -11,6 +11,13 @@ you edited, not the template.
 | `model_card.md` | `model_card` | `text/vnd.genesis.model-card+markdown` |
 | `agent_card.md` | `agent_card` | `text/vnd.genesis.agent-card+markdown` |
 | `resource_card.md` | `resource_card` | `text/vnd.genesis.resource-card+markdown` |
+| `workflow_card.md` | *not registrable* | — |
+
+The workflow card is the odd one. The registry recognises the four subtypes
+above and workflow is not among them, so `seed_registry.py` skips workflow
+cards the way it skips framework cards. The engine understands the type; only
+registration has nowhere to put it. Load one through the storage path the
+hackathon materials use -- the template says how at the top.
 
 ## The loop
 
