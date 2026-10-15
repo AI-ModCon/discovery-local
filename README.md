@@ -170,6 +170,42 @@ of whichever one is unhappy, for example `docker compose logs opensearch`.
 | `api` never becomes healthy, `ui` refuses to start | `ui` waits on `api` by design. The cause is in `docker compose logs api`. |
 | Search returns far too much, or nothing semantic works | The embedding model did not download. Check `docker compose logs api` for the fetch. |
 | The canvas assistant says no model is configured | Expected. Add a key under Settings then LLM Providers. |
+| `CERTIFICATE_VERIFY_FAILED ... self-signed certificate in certificate chain` | Your network inspects TLS. See "Behind a TLS-inspecting proxy". |
+
+## Behind a TLS-inspecting proxy
+
+Some networks re-sign outbound HTTPS with a private CA. The containers do not
+trust it, so the engine's first outbound call fails -- fetching the embedding
+model:
+
+```
+fastembed ... Could not download model from HuggingFace:
+[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed:
+self-signed certificate in certificate chain
+```
+
+It retries three times and gives up, and you get a stack without semantic
+search.
+
+Trust the CA rather than switching the check off. Export your proxy's root
+certificate in PEM form, then bring the stack up with the overlay:
+
+```bash
+CA_BUNDLE=/path/to/corp-ca.crt \
+  docker compose -f compose.yaml -f compose.ca.yaml up -d
+```
+
+Switching verification off does not work here, which is worth knowing before
+you try it: `PYTHONHTTPSVERIFY` only affects Python's standard library, and
+this download goes through huggingface_hub, which uses requests -- and
+requests reads its own bundle and ignores that variable.
+
+If you cannot get the certificate, `EMBEDDING_PROVIDER=stub` starts without
+the model. Everything works except semantic search, which falls back to
+matching on shared words.
+
+The model is about 130MB and is cached in the `engine-data` volume, so this is
+a once-per-machine problem rather than once per start.
 
 ## Register a card and find it
 

@@ -1,0 +1,48 @@
+# Trust a corporate CA, for networks that inspect TLS.
+#
+# Some sites re-sign outbound HTTPS with a private CA. The containers do not
+# trust it, so the engine's first outbound call fails -- downloading the
+# embedding model:
+#
+#   fastembed ... Could not download model from HuggingFace:
+#   [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed:
+#   self-signed certificate in certificate chain
+#
+# After three retries it gives up, and the stack comes up without semantic
+# search.
+#
+# Turning verification off does not fix this. `PYTHONHTTPSVERIFY` only affects
+# Python's standard library, and the download goes through huggingface_hub,
+# which uses requests -- requests reads its own bundle and ignores that
+# variable. So the CA has to be trusted rather than the check skipped.
+#
+# Use it with the main file, pointing CA_BUNDLE at your CA in PEM form:
+#
+#   CA_BUNDLE=/path/to/corp-ca.crt \
+#     docker compose -f compose.yaml -f compose.ca.yaml up -d
+#
+# CA_BUNDLE is required here: compose fails with the message below if it is
+# unset, rather than mounting nothing and failing later in a way that looks
+# unrelated. If you also reach hosts that are *not* inspected, concatenate
+# your CA with the system bundle and point at that instead -- these variables
+# replace the trust store rather than adding to it.
+
+services:
+  api:
+    environment:
+      # One path, four clients: requests (the model download), curl, anything
+      # using OpenSSL directly, and Node (the assistant's model calls).
+      REQUESTS_CA_BUNDLE: /etc/ssl/certs/corp-ca.crt
+      CURL_CA_BUNDLE: /etc/ssl/certs/corp-ca.crt
+      SSL_CERT_FILE: /etc/ssl/certs/corp-ca.crt
+      NODE_EXTRA_CA_CERTS: /etc/ssl/certs/corp-ca.crt
+    volumes:
+      - ${CA_BUNDLE:?set CA_BUNDLE to your CA certificate, in PEM form}:/etc/ssl/certs/corp-ca.crt:ro
+
+  seed:
+    environment:
+      REQUESTS_CA_BUNDLE: /etc/ssl/certs/corp-ca.crt
+      CURL_CA_BUNDLE: /etc/ssl/certs/corp-ca.crt
+      SSL_CERT_FILE: /etc/ssl/certs/corp-ca.crt
+    volumes:
+      - ${CA_BUNDLE:?set CA_BUNDLE to your CA certificate, in PEM form}:/etc/ssl/certs/corp-ca.crt:ro
