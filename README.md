@@ -121,15 +121,39 @@ reload them after editing one, see `hackathon/README.md`.
 
 ## Writing a card
 
-`skills/xcard-author/` is a Claude Code skill that writes an xCard and
-registers it -- model, data, agent, resource or workflow. It starts from the
-templates in `templates/`, which are valid cards tested against the registry,
-fills them by asking and by reading the thing being described, checks the card
-has actually been edited, and registers it.
+Three ways, in the order most people want them. Only the first one happens
+inside the Discovery Engine; the other two are things you run yourself.
 
-Point Claude Code at this directory and ask it to describe your model, dataset
-or agent as a card. Or use the templates directly: `templates/README.md` has
-the loop.
+**In the engine: "Create a Card" in the left sidebar.** A form per card type,
+with the card shown as you fill it. **Register** writes it to the registry and
+re-reads it into the engine, so it is searchable immediately and tells you
+whether that worked. Nothing to install, and this is the route to send someone
+who asks how to make a card.
+
+**From a template, by hand.** `templates/` holds one valid card per type,
+each tested against the registry, so a rejection means a value was edited
+wrongly rather than the shape being wrong. Copy one, fill it, then:
+
+```bash
+python3 templates/check_card.py my-card.md
+```
+
+which reports every value still identical to the template -- a corpus of
+"My Example Agent" entries is worse than an empty one, because search returns
+them. `templates/README.md` has the loop, and "Register a card and find it"
+below has the registry call.
+
+**With Claude Code.** `skills/xcard-author/` is a skill for
+[Claude Code](https://claude.com/claude-code), a separate command-line tool you
+install on your own machine. **It does not run inside the Discovery Engine.**
+If you have it, point it at this directory and ask it to describe your model,
+dataset or agent as a card; it does the two routes above for you, including the
+check and the registration.
+
+One thing that catches people out: the AI assistant on the Workspace canvas
+reasons about workflows and answers questions about cards that already exist.
+It does not write cards, and asking it to will not get you one. Use **Create a
+Card**.
 
 ## Knobs
 
