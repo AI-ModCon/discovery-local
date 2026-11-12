@@ -4,6 +4,7 @@
 #
 # Replace every value marked CHANGE ME. Leave the structure alone.
 #   curl -X POST http://localhost:18100/api/current/registry/model_card \
+#   -H "Idempotency-Key: $IDEMPOTENCY_KEY" \
 #     -H "Content-Type: text/vnd.genesis.model-card+markdown" \
 #     --data-binary @model_card.md
 # ---------------------------------------------------------------------------

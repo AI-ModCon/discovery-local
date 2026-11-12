@@ -33,6 +33,7 @@ python3 templates/check_card.py my-agent.md
 
 # 4. register your copy
 curl -X POST http://localhost:18100/api/current/registry/agent_card \
+  -H "Idempotency-Key: $IDEMPOTENCY_KEY" \
   -H "Content-Type: text/vnd.genesis.agent-card+markdown" \
   --data-binary @my-agent.md
 

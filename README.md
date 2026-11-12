@@ -249,9 +249,24 @@ these flags. Put the command on one line too: PowerShell does not continue lines
 with a trailing `\`.
 
 ```bash
+IDEMPOTENCY_KEY="my-agent-card-first-try"
 curl -X POST http://localhost:18100/api/current/registry/agent_card \
+  -H "Idempotency-Key: ${IDEMPOTENCY_KEY}" \
   -H "Content-Type: text/vnd.genesis.agent-card+markdown" \
   --data-binary @my-agent-card.md
+```
+
+`Idempotency-Key` is what makes a retry safe. The registry assigns ids, so
+without it a second POST of the same card creates a second card rather than
+updating the first. Pick any string of 8 to 128 letters, digits, underscores or
+hyphens, and **reuse the same one if you have to retry** — you then get `200`
+with the id from the first attempt instead of `201` and a duplicate. Both are
+success. A genuinely new card needs its own key.
+
+`register_card.sh` requires the key in the environment, for the same reason:
+
+```bash
+IDEMPOTENCY_KEY=my-agent-card-first-try ./register_card.sh my-agent-card.md
 ```
 
 Then tell the engine to pick it up:
@@ -267,6 +282,14 @@ searchable; without it you would have to restart the api container.
 If the registry rejects your card, the error says which field failed. It
 validates against the same xCard schema the engine does, so a card that passes
 here passes on the cluster.
+
+A note on resetting the stack. The seed keeps its own operation keys on the
+`seed-state` volume, so re-running it replays the original creations rather than
+duplicating the corpus. `docker compose down -v` discards that ledger — which is
+fine, because it discards the registry's storage in the same breath, so the two
+stay consistent. What you should not do is clear one without the other: a
+registry with cards in it and no ledger has no way to tell a retry from a new
+card, and the seed will refuse to run rather than guess.
 
 ## What is in the stack
 

@@ -151,6 +151,7 @@ services:
       GENESIS_SETTINGS_SECRET: local-only
       XCARD_REGISTRY_URL: http://registry:8000
       SEED_CORPUS: /app/cards/xcard
+      SEED_STATE_PATH: /seed-state/operations.json
       SEED_LIMIT: ${SEED_LIMIT:-0}
       SEED_FORCE: ${SEED_FORCE:-}
       # Read access to the bucket, so seeding can tell whether it has already
@@ -162,6 +163,11 @@ services:
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-xcard-local-access}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-xcard-local-secret-key}
     volumes:
+      # The operation-key ledger. seed_registry.py writes a durable key per card
+      # before it POSTs, so a retry replays that creation instead of making a
+      # second copy. It must outlive the container, and it is only safe to
+      # discard together with the registry's own storage.
+      - seed-state:/seed-state
       - ./seed_registry.py:/seed_registry.py:ro
       - ./load_hackathon_materials.py:/load_hackathon_materials.py:ro
       - ./hackathon:/hackathon:ro
@@ -237,15 +243,6 @@ services:
       GENESIS_ARGO_BASE_URL: ${GENESIS_ARGO_BASE_URL:-http://host.docker.internal:44497}
       GENESIS_ALCF_BASE_URL: ${GENESIS_ALCF_BASE_URL:-http://host.docker.internal:4000}
       GENESIS_LOG_LEVEL: ${GENESIS_LOG_LEVEL:-INFO}
-      # HACKATHON ONLY (temporary): skip TLS verification for the assistant's
-      # outbound model calls. On the ORNL network a Netskope proxy re-signs
-      # HTTPS with a private CA the container does not trust, so the gateway
-      # call fails with CERTIFICATE_VERIFY_FAILED / SELF_SIGNED_CERT_IN_CHAIN.
-      # These let everyone run without extracting and mounting the Netskope CA.
-      # Covers the Node assistant path and the Python/urllib gateway path.
-      # REMOVE AFTER THE EVENT -- this disables certificate checking.
-      NODE_TLS_REJECT_UNAUTHORIZED: "0"
-      PYTHONHTTPSVERIFY: "0"
     # Declared here rather than relied on from the image. Docker Compose reads
     # an image's HEALTHCHECK, but Podman does not surface it, so `ui` waiting on
     # `depends_on: api: service_healthy` failed with "no healthcheck configured".
@@ -281,6 +278,7 @@ services:
     # name is load-bearing.
 
 volumes:
+  seed-state:
   s3-data:
   opensearch-data:
   engine-data:
