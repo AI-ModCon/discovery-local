@@ -18,6 +18,11 @@
 set -euo pipefail
 
 CARD="${1:-}"
+IDEMPOTENCY_KEY="${IDEMPOTENCY_KEY:-}"
+[[ "${IDEMPOTENCY_KEY}" =~ ^[A-Za-z0-9_-]{8,128}$ ]] || {
+  echo "Set IDEMPOTENCY_KEY to a retained operation key (8-128 letters/digits/_/-). Reuse it for retries." >&2
+  exit 2
+}
 REGISTRY="${REGISTRY_URL:-http://localhost:18100}"
 ENGINE="${ENGINE_URL:-http://localhost:18000}"
 
@@ -54,10 +59,11 @@ echo "==> registering ${CARD} as ${subtype}"
 body="$(mktemp)"; trap 'rm -f "${body}"' EXIT
 code="$(curl -sS -o "${body}" -w '%{http_code}' -X POST \
   "${REGISTRY}/api/current/registry/${subtype}" \
+  -H "Idempotency-Key: ${IDEMPOTENCY_KEY}" \
   -H "Content-Type: text/vnd.genesis.${media}+markdown" \
   --data-binary @"${CARD}")"
 
-if [ "${code}" != "201" ]; then
+if [ "${code}" != "201" ] && [ "${code}" != "200" ]; then
   echo "    the registry refused it (HTTP ${code}):" >&2
   # The error names the field; print it rather than making someone read JSON.
   python3 - "${body}" >&2 <<'PY' || cat "${body}" >&2

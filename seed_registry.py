@@ -7,7 +7,10 @@ than raw HTTP: seeding then exercises the same create path the cluster
 deployment uses, and a contract change breaks the local stack loudly instead of
 silently diverging.
 
-Skips when the bucket already holds cards. The registry assigns ids, so
+Uses durable operation keys across repeated uploads. Legacy bucket checks
+without a ledger fail closed; populated stores need reviewed migration.
+
+Historical behavior skipped populated buckets. The Registry assigns IDs, so
 re-running would add a second copy of every card rather than updating them.
 That did not show while the S3 stand-in discarded its files on shutdown, since
 every start began empty. Now that it retains them, seeding has to check.
@@ -30,6 +33,7 @@ from genesis.knowledge._registry_api_client import (
     RegistryApiError,
     XCardRegistryApiClient,
 )
+from genesis.knowledge._seed_state import seed_operation
 
 CORPUS = Path(os.environ.get("SEED_CORPUS", "/app/cards/xcard"))
 LIMIT = int(os.environ.get("SEED_LIMIT", "0"))
@@ -43,8 +47,8 @@ def bucket_already_seeded() -> bool:
 
     Checked directly against storage rather than through the registry, which
     serves cards by id only and so cannot answer "is there anything here".
-    Any failure returns False: seeding a populated bucket is recoverable, and
-    refusing to seed an empty one leaves the engine with nothing to index.
+    Failure blocks first-run bootstrap without a ledger. Existing operation
+    keys make subsequent runs independent of this bucket probe.
     """
     try:
         import boto3
@@ -60,9 +64,10 @@ def bucket_already_seeded() -> bool:
             MaxKeys=1,
         )
         return listing.get("KeyCount", 0) > 0
-    except Exception as exc:  # noqa: BLE001 - never block seeding on this
-        print(f"could not check whether the bucket is seeded: {exc}", flush=True)
-        return False
+    except Exception as exc:
+        raise RuntimeError(
+            "Could not establish whether legacy Registry data exists"
+        ) from exc
 
 
 def card_type_of(markdown: str) -> str | None:
@@ -92,14 +97,24 @@ async def wait_for_registry(client: XCardRegistryApiClient) -> bool:
 
 
 async def main() -> int:
-    if not FORCE and bucket_already_seeded():
-        print(
-            "registry already holds cards; skipping the seed. "
-            "Set SEED_FORCE=1 to seed anyway, or 'docker compose down -v' to "
-            "start from an empty bucket.",
-            flush=True,
-        )
-        return 0
+    # Registry idempotency, not bucket enumeration, determines repeat safety.
+    # FORCE never discards keys. The ledger must survive container restarts.
+    state_path = Path(os.environ.get("SEED_STATE_PATH", "/seed-state/operations.json"))
+    if not state_path.exists():
+        try:
+            if bucket_already_seeded():
+                print(
+                    "Registry has data but no seed ledger. "
+                    "Review legacy seed migration; refusing fresh keys.",
+                    file=sys.stderr,
+                )
+                return 1
+        except RuntimeError:
+            print(
+                "Bucket check unavailable and no seed ledger; refusing fresh keys.",
+                file=sys.stderr,
+            )
+            return 1
 
     paths = sorted(CORPUS.rglob("*.md"))
     if LIMIT:
@@ -127,7 +142,19 @@ async def main() -> int:
                 unsupported[str(card_type)] = unsupported.get(str(card_type), 0) + 1
                 continue
             try:
-                await client.create_card(markdown, xcard_type=xcard_type)
+                with seed_operation(
+                    Path(
+                        os.environ.get("SEED_STATE_PATH", "/seed-state/operations.json")
+                    ),
+                    target=REGISTRY_URL,
+                    caller=os.environ.get("SEED_CALLER_SCOPE", "local-permissive-user"),
+                    source=path.relative_to(CORPUS).as_posix(),
+                    xcard_type=xcard_type,
+                    content=markdown.encode("utf-8"),
+                ) as key:
+                    await client.create_card(
+                        markdown, xcard_type=xcard_type, idempotency_key=key
+                    )
                 created += 1
             except RegistryApiError as exc:
                 failed.append(f"{path.name}: {exc.code} {exc.message}"[:160])
@@ -142,8 +169,8 @@ async def main() -> int:
             for line in failed[:10]:
                 print(f"    {line}", flush=True)
 
-    # A partial seed still leaves a usable stack, so only a total failure is fatal.
-    return 0 if created else 1
+    # A failed operation needs investigation, even when other cards succeeded.
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":

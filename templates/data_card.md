@@ -15,6 +15,7 @@
 #
 # Replace every value marked CHANGE ME. Register with:
 #   curl -X POST http://localhost:18100/api/current/registry/data_card \
+#   -H "Idempotency-Key: $IDEMPOTENCY_KEY" \
 #     -H "Content-Type: text/vnd.genesis.data-card+markdown" \
 #     --data-binary @data_card.md
 # ---------------------------------------------------------------------------

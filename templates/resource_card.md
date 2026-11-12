@@ -5,6 +5,7 @@
 # Note the card_type is "infrastructure" while the registry endpoint is
 # "resource_card". That is deliberate and not a typo.
 #   curl -X POST http://localhost:18100/api/current/registry/resource_card \
+#   -H "Idempotency-Key: $IDEMPOTENCY_KEY" \
 #     -H "Content-Type: text/vnd.genesis.resource-card+markdown" \
 #     --data-binary @resource_card.md
 # ---------------------------------------------------------------------------

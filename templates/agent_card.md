@@ -6,6 +6,7 @@
 # names are the contract, and the registry rejects a card that drops one.
 # Register it with:
 #   curl -X POST http://localhost:18100/api/current/registry/agent_card \
+#   -H "Idempotency-Key: $IDEMPOTENCY_KEY" \
 #     -H "Content-Type: text/vnd.genesis.agent-card+markdown" \
 #     --data-binary @agent_card.md
 # ---------------------------------------------------------------------------
